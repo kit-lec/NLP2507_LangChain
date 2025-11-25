@@ -1,0 +1,26 @@
+.venv/
+.ipynb_checkpoints/
+.idea/
+env/
+.env
+.cache
+*.db
+download/**
+.cache_bkup
+model.json
+movies.sqlite
+
+# fast api
+__pycache__
+
+*.jpg
+*.jpeg
+*.gif
+*.png
+
+*.txt
+*.docx
+*.pdf
+
+*.mp4
+*.mp3

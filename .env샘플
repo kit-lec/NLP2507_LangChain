@@ -1,0 +1,12 @@
+OPENAI_API_KEY="sk-proj-***************************"
+HF_TOKEN=hf_******************************
+
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_ENDPOINT="https://api.smith.langchain.com"
+LANGCHAIN_API_KEY=lsv2_pt_********************************************
+
+CLOVASTUDIO_TEST_API_KEY=nv-********************************
+
+ALPHA_VANTAGE_API_KEY=*******************************
+
+PINECONE_API_KEY=**********************************

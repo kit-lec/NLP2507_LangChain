@@ -1,0 +1,1 @@
+call D:\NLP2507\LangWork\.venv\Scripts\activate.bat
