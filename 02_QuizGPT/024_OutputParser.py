@@ -27,15 +27,19 @@ from langchain_core.output_parsers.base import BaseOutputParser
 # ────────────────────────────────────────
 
 class JsonOutputParser(BaseOutputParser):
+    # text=  : LLM 에 의해 생성된 결과를 전달하게 될거다.
     def parse(self, text):
+        # 응답의 앞과 뒤의 문자열 제거
         text = text.replace("```json", "").replace("```", "")
+        # 파이썬 객체 <- JSON text
         return json.loads(text)
 
 output_parser = JsonOutputParser()
+    
 
 llm = ChatOpenAI(
     temperature=0.1,
-    model='gpt-4o',
+    model='gpt-3.5-turbo-1106',
     streaming=True,
     callbacks=[StreamingStdOutCallbackHandler()],
 )
@@ -226,17 +230,6 @@ def split_file(file):
     docs = loader.load_and_split(text_splitter=splitter)
     return docs 
 
-@st.cache_resource(show_spinner="Making quiz...")
-def run_quiz_chain(_docs, topic):
-    chain = {"context": question_chain} | formatting_chain | output_parser
-    return chain.invoke(_docs)
-
-@st.cache_resource(show_spinner="Searching Wikipedia...")
-def wiki_search(topic):
-    retriever = WikipediaRetriever(top_k_results=5)
-    
-    docs = retriever.invoke(topic)
-    return docs
 
 
 
@@ -253,7 +246,6 @@ st.title("QuizGPT")
 with st.sidebar:
 
     docs = None  # 읽어들인 문서들 List[Document]
-    topic = None
 
     choice = st.selectbox(
         label="Choose what you want to use.",
@@ -274,7 +266,10 @@ with st.sidebar:
     else:
         topic = st.text_input("Search Wikipedia...")
         if topic:
-            docs = wiki_search(topic)
+            retriever = WikipediaRetriever(top_k_results=5)
+
+            with st.status("Searching Wikipedia..."):
+                docs = retriever.invoke(topic)
 
 
 # 문서(docs) 가 존재하면
@@ -288,39 +283,19 @@ if not docs:
     Get started by uploading a file or searching on Wikipedia in the sidebar.
     """
     )
-else:    
-    response = run_quiz_chain(docs, topic if topic else file.name)
-    # st.write(response) # 확인용.
+else:
+    start = st.button("Generate Quiz")
+    if start:
+        # questions_response = question_chain.invoke(docs)
 
-    # form 작성
-    #  key= : 페이지 내의 form 식별자
-    with st.form(key="questions_form"):
-        # 각각의 질문들을 위해 st.write() 해주자
-        for key, question in enumerate(response["questions"]):
-            st.write(question['question'])  # 확인용
+        # formatting_response = formatting_chain.invoke({
+        #     "context": questions_response.content,
+        # })
 
-            value = st.radio(label="Select an option",
-                     options=[answer['answer'] for answer in question['answers']],
-                     key=key, 
-                     index=None,
-                     )
-            # st.write(value) # 선택한 radio 값 확인
-            # st.success(value) # alert 표시.
-            # st.error(value)
-
-            # answers 들을 출력해보자
-            # st.json(question['answers'])
-            # st.json({"answer": value, "correct": True})
-
-            # 정답 판정
-            if {"answer": value, "correct": True} in question['answers']:
-                st.success("Correct!")
-            elif value is not None:  # 오답을 선택한 것만 Wrong!
-                st.error("Wrong!")
-            
-
-        button = st.form_submit_button()
-        
+        # 기존 체인을 아래와 같이 하나의 체인으로 만들어 보자
+        chain = {"context": question_chain} | formatting_chain | output_parser
+        response = chain.invoke(docs)
+        st.write(response) # 확인용!
 
 
 

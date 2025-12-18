@@ -35,7 +35,7 @@ output_parser = JsonOutputParser()
 
 llm = ChatOpenAI(
     temperature=0.1,
-    model='gpt-4o',
+    model='gpt-3.5-turbo-1106',
     streaming=True,
     callbacks=[StreamingStdOutCallbackHandler()],
 )
@@ -226,11 +226,15 @@ def split_file(file):
     docs = loader.load_and_split(text_splitter=splitter)
     return docs 
 
+# quiz 생성체인을 cache 한다. docs 가 변하지 않으면 재실행 안하게 하기
 @st.cache_resource(show_spinner="Making quiz...")
+# streamlit 이 hash 하지 않도록 매개변수에 _ 로 시작
+# 대신 topic 이라는 hash 가능한 매개변수가 변경되면 실행되도록 하자
 def run_quiz_chain(_docs, topic):
     chain = {"context": question_chain} | formatting_chain | output_parser
     return chain.invoke(_docs)
 
+# Wikipedia 검색도 cache 한다 (이 또한 시간이 많이 걸리는 작업)
 @st.cache_resource(show_spinner="Searching Wikipedia...")
 def wiki_search(topic):
     retriever = WikipediaRetriever(top_k_results=5)
@@ -288,38 +292,13 @@ if not docs:
     Get started by uploading a file or searching on Wikipedia in the sidebar.
     """
     )
-else:    
-    response = run_quiz_chain(docs, topic if topic else file.name)
-    # st.write(response) # 확인용.
-
-    # form 작성
-    #  key= : 페이지 내의 form 식별자
-    with st.form(key="questions_form"):
-        # 각각의 질문들을 위해 st.write() 해주자
-        for key, question in enumerate(response["questions"]):
-            st.write(question['question'])  # 확인용
-
-            value = st.radio(label="Select an option",
-                     options=[answer['answer'] for answer in question['answers']],
-                     key=key, 
-                     index=None,
-                     )
-            # st.write(value) # 선택한 radio 값 확인
-            # st.success(value) # alert 표시.
-            # st.error(value)
-
-            # answers 들을 출력해보자
-            # st.json(question['answers'])
-            # st.json({"answer": value, "correct": True})
-
-            # 정답 판정
-            if {"answer": value, "correct": True} in question['answers']:
-                st.success("Correct!")
-            elif value is not None:  # 오답을 선택한 것만 Wrong!
-                st.error("Wrong!")
-            
-
-        button = st.form_submit_button()
+else:
+    start = st.button("Generate Quiz")
+    if start:
+        # 두번째 매개변수에 hash 가능한 값 전달
+        # topic 이 있는 경우 (wiki 검색) & topic 이 없는 경우 (파일명)
+        response = run_quiz_chain(docs, topic if topic else file.name)
+        st.write(response) # 확인용.
         
 
 

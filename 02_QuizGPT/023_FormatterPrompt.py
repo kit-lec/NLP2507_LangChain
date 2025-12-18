@@ -19,23 +19,14 @@ from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHan
 
 from langchain_community.retrievers.wikipedia import WikipediaRetriever
 
-import json
-from langchain_core.output_parsers.base import BaseOutputParser
-
 # ────────────────────────────────────────
 # 🎃 LLM 로직
 # ────────────────────────────────────────
 
-class JsonOutputParser(BaseOutputParser):
-    def parse(self, text):
-        text = text.replace("```json", "").replace("```", "")
-        return json.loads(text)
-
-output_parser = JsonOutputParser()
-
 llm = ChatOpenAI(
     temperature=0.1,
-    model='gpt-4o',
+    # model='gpt-4o',
+    model='gpt-3.5-turbo-1106', # https://platform.openai.com/docs/models/gpt-3.5-turbo
     streaming=True,
     callbacks=[StreamingStdOutCallbackHandler()],
 )
@@ -70,11 +61,18 @@ question_prompt = ChatPromptTemplate.from_messages([
         """),
     ])
 
+
+# 우리가 준비한 문서를 chain 에 넣어주기 전에 format 해서 사용해볼거다
+# chain에 '함수'를 넣어줄거고, 그 함수는 문서들을 format 하고 내용들을 추출합니다
+#     ↑ DocumentGPT 예제에서 format_docs() 함수를 만들적이 있었다!
 def format_docs(docs):
     return "\n\n".join(document.page_content for document in docs)
 
+# chain 생성
 question_chain = {"context": format_docs} | question_prompt | llm
 
+# 만들어진 퀴즈 문제를 받아서 json 처럼 format 해줄 system prompt 를 만들자.
+# 그렇게 함으로 파이썬에서 더욱 빠르게 처리해서 UI를 씌우기 간편해질거다.
 formatting_prompt = ChatPromptTemplate.from_messages([
     ("system", """
     You are a powerful formatting algorithm.
@@ -226,17 +224,6 @@ def split_file(file):
     docs = loader.load_and_split(text_splitter=splitter)
     return docs 
 
-@st.cache_resource(show_spinner="Making quiz...")
-def run_quiz_chain(_docs, topic):
-    chain = {"context": question_chain} | formatting_chain | output_parser
-    return chain.invoke(_docs)
-
-@st.cache_resource(show_spinner="Searching Wikipedia...")
-def wiki_search(topic):
-    retriever = WikipediaRetriever(top_k_results=5)
-    
-    docs = retriever.invoke(topic)
-    return docs
 
 
 
@@ -253,7 +240,6 @@ st.title("QuizGPT")
 with st.sidebar:
 
     docs = None  # 읽어들인 문서들 List[Document]
-    topic = None
 
     choice = st.selectbox(
         label="Choose what you want to use.",
@@ -274,7 +260,10 @@ with st.sidebar:
     else:
         topic = st.text_input("Search Wikipedia...")
         if topic:
-            docs = wiki_search(topic)
+            retriever = WikipediaRetriever(top_k_results=5)
+
+            with st.status("Searching Wikipedia..."):
+                docs = retriever.invoke(topic)
 
 
 # 문서(docs) 가 존재하면
@@ -288,40 +277,17 @@ if not docs:
     Get started by uploading a file or searching on Wikipedia in the sidebar.
     """
     )
-else:    
-    response = run_quiz_chain(docs, topic if topic else file.name)
-    # st.write(response) # 확인용.
+else:
+    start = st.button("Generate Quiz")
+    if start:
+        questions_response = question_chain.invoke(docs)
+        st.write(questions_response.content) # 확인용
 
-    # form 작성
-    #  key= : 페이지 내의 form 식별자
-    with st.form(key="questions_form"):
-        # 각각의 질문들을 위해 st.write() 해주자
-        for key, question in enumerate(response["questions"]):
-            st.write(question['question'])  # 확인용
+        formatting_response = formatting_chain.invoke({
+            "context": questions_response.content,
+        })
 
-            value = st.radio(label="Select an option",
-                     options=[answer['answer'] for answer in question['answers']],
-                     key=key, 
-                     index=None,
-                     )
-            # st.write(value) # 선택한 radio 값 확인
-            # st.success(value) # alert 표시.
-            # st.error(value)
-
-            # answers 들을 출력해보자
-            # st.json(question['answers'])
-            # st.json({"answer": value, "correct": True})
-
-            # 정답 판정
-            if {"answer": value, "correct": True} in question['answers']:
-                st.success("Correct!")
-            elif value is not None:  # 오답을 선택한 것만 Wrong!
-                st.error("Wrong!")
-            
-
-        button = st.form_submit_button()
-        
-
+        st.write(formatting_response.content) # 확인용
 
 
 
