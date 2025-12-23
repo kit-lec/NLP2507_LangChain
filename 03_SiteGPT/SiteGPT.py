@@ -160,12 +160,26 @@ def load_website(url):
     loader.headers = {'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36'}
     docs = loader.load_and_split(text_splitter=splitter)
 
-    vector_store = FAISS.from_documents(
-        documents=docs,
-        # ★명심. cache 를 만들때..
-        #   다른 sitemap 에서 얻은 각각의 URL 마다 별도의 cache를 만들어야 한다
-        embedding=OpenAIEmbeddings(),
-    )
+# BadRequestError: Error code: 400 - {'error': {'message': 'Requested 626127 tokens, max 300000 tokens per request', 'type': 'max_tokens_per_request', 'param': None, 'code': 'max_tokens_per_request'}}
+
+    batch_size = 100  # Document 를 적절한 크기로 묶을거다.
+
+    substores = []
+    for i in range(0, len(docs), batch_size):
+        chunk = docs[i: i + batch_size]  # batch_size 만큼씩 embedding 할거다.
+
+        vector_store = FAISS.from_documents(
+            documents=chunk,
+            # ★명심. cache 를 만들때..
+            #   다른 sitemap 에서 얻은 각각의 URL 마다 별도의 cache를 만들어야 한다
+            embedding=OpenAIEmbeddings(),
+        )
+        substores.append(vector_store)
+
+    # 여러 FAISS store 를 병합
+    vector_store = substores[0]
+    for store in substores[1:]:
+        vector_store.merge_from(store)
 
     return vector_store.as_retriever()
 
