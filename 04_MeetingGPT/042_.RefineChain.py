@@ -33,10 +33,7 @@ llm = ChatOpenAI(
     temperature=0.1,
 )
 
-splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    chunk_size=800,
-    chunk_overlap=100,
-)
+
 
 # ────────────────────────────────────────
 # 🍇 file load & cache
@@ -45,10 +42,6 @@ file_dir = os.path.dirname(os.path.realpath(__file__))
 upload_dir = os.path.join(file_dir, '.cache/chunks')
 if not os.path.exists(upload_dir):
     os.makedirs(upload_dir)
-
-embedding_dir = os.path.join(file_dir, r'./.cache/embeddings')
-if not os.path.exists(embedding_dir):
-    os.makedirs(embedding_dir)    
 
 has_transcript = os.path.exists(os.path.join(file_dir, r'.cache/podcast.txt'))
 
@@ -98,21 +91,7 @@ def transcribe_chunks(chunk_folder, destination):
            
             text_file.write(transcript.text) # 곧바로 텍스트 파일에 저장
 
-# podcast.txt 를 embed 해야 한다.
-@st.cache_resource(show_spinner="Embedding file...")
-def embed_file(file_path):
-    cache_dir = LocalFileStore(os.path.join(embedding_dir))  
 
-    loader = TextLoader(file_path)
-    docs = loader.load_and_split(text_splitter=splitter)
-
-    embeddings = OpenAIEmbeddings()
-    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
-
-    vectorstore = FAISS.from_documents(docs, cached_embeddings)
-
-    retriever = vectorstore.as_retriever()
-    return retriever
 
 # ────────────────────────────────────────
 # ⭕ Streamlit 로직
@@ -174,7 +153,10 @@ if video:
         #      LLM 에게 '이전의 summary' 와 새 context 를 사용하여 새로운 summary 를 만들게 함 (refine!).
         if start:
             loader = TextLoader(transcript_path)
-
+            splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+                chunk_size=800,
+                chunk_overlap=100,
+            )
             docs = loader.load_and_split(text_splitter=splitter)
             
             # 첫번째 chain : 첫번째 Document 요약
@@ -188,8 +170,10 @@ if video:
 
             first_summary_chain = first_summary_prompt | llm | StrOutputParser()
 
-            summary = first_summary_chain.invoke({"text": docs[0].page_content})
+            # 확인용
+            summary = first_summary_chain.invoke({"text": docs[0].page_content})   # <- 첫번째 Document 입력
 
+            # 두번째 chain : 나머지 Document 들을 요약할 chain
             refine_prompt = ChatPromptTemplate.from_template(
                 """
                 Your job is to produce a final summary.
@@ -209,26 +193,18 @@ if video:
 
             refine_chain = refine_prompt | llm | StrOutputParser()
 
+            # 나머지 모든 Document(들) 에 대해 chain 호출
             with st.status("Summarizing...") as status:
-                for i, doc in enumerate(docs[1:]):
+                for i, doc in enumerate(docs[1:]):   # 두번째 Document 부터~
                     status.update(label=f'Processing document {i+1}/{len(docs)-1} ')
+                    # 기존의 summary 를 새로운 응답으로 덮어쓰기
                     summary = refine_chain.invoke({
-                        "existing_summary": summary,
-                        "context": doc.page_content,
+                        "existing_summary": summary,  # 이전 summary 와
+                        "context": doc.page_content,  # 다음 Document 를 사용.
                     })
+                    st.write("🔷 " + summary)  # 확인, 중간단계 요약 누적
 
             st.write("✅ " + summary)  # 최종 요약.
-
-    with qa_tab:
-        retriever = embed_file(transcript_path)
-
-        # 동작확인
-        docs = retriever.invoke("do they talk about marcus aurelius?")
-        st.write(docs)
-
-        # 도전
-        # 녹취록 에 대한 질문과 답변을 만들어 보자.
-        # stuff, map-reduce, map-rerank ...  어떤 chain 으로도 함 도전!
 
 
 
